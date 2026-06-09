@@ -9,12 +9,13 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.81.1",
+    "lucide-react": "^0.436.0",
     "next": "14.2.7",
+    "pg": "^8.21.0",
     "react": "^18",
     "react-dom": "^18",
-    "recharts": "^2.12.7",
-    "lucide-react": "^0.436.0",
-    "@supabase/supabase-js": "^2.81.1"
+    "recharts": "^2.12.7"
   },
   "devDependencies": {
     "@types/node": "^20",
