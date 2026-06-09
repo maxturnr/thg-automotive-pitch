@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { DealSummary, Car } from '@/lib/data';
+import { DealSummary, Car, Expense } from '@/lib/data';
 import { formatCurrency, formatDate, cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 
@@ -12,7 +12,7 @@ interface CarDrawerProps {
   onSaved: () => void;
 }
 
-type Tab = 'details' | 'financials' | 'images';
+type Tab = 'details' | 'financials' | 'expenses' | 'images';
 
 const emptyCarData: Partial<Car> = {
   make: '',
@@ -41,17 +41,23 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
   const [formData, setFormData] = useState<Record<string, any>>({});
   const [images, setImages] = useState<string[]>([]);
   const [newImageUrl, setNewImageUrl] = useState('');
+  const [mileage, setMileage] = useState('');
+  // Expenses state
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [addingExpense, setAddingExpense] = useState(false);
+  const [newExpense, setNewExpense] = useState({ type: '', amount: '', date: '', supplier: '' });
+  const [savingExpense, setSavingExpense] = useState(false);
+  const [deletingExpenseId, setDeletingExpenseId] = useState<number | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
   const car = deal?.car;
-
-  const [mileage, setMileage] = useState('');
 
   // Initialize form data
   useEffect(() => {
     if (isNew) {
       setFormData({ ...emptyCarData });
       setMileage('');
+      setExpenses([]);
     } else if (car) {
       setFormData({
         make: car.make || '',
@@ -70,7 +76,6 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
         fee: car.fee ?? '',
         is_sale_or_return: car.is_sale_or_return || false,
         notes: car.notes || '',
-        final_sale_price: car.final_sale_price ?? '',
         owner_payout_amount: car.owner_payout_amount ?? '',
         owner_name: (car as any).owner_name || '',
       });
@@ -86,8 +91,12 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
       } catch {
         // notes is plain text, no extras
       }
+      // Load expenses from deal
+      if (deal?.expenses) {
+        setExpenses(deal.expenses);
+      }
     }
-  }, [car, isNew]);
+  }, [car, isNew, deal]);
 
   const updateField = (key: string, value: any) => {
     setFormData(prev => ({ ...prev, [key]: value }));
@@ -117,14 +126,12 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
         advertised_date: toDate(formData.advertised_date),
         fee: toNum(formData.fee),
         is_sale_or_return: formData.is_sale_or_return || false,
-        final_sale_price: toNum(formData.final_sale_price),
         owner_payout_amount: toNum(formData.owner_payout_amount),
       };
 
       // Store extras (images, mileage) in notes as JSON
       const notesObj: any = {};
       const plainNotes = typeof formData.notes === 'string' ? formData.notes : '';
-      // If notes is already JSON, extract just the text part
       let textNotes = plainNotes;
       try {
         const parsed = JSON.parse(plainNotes);
@@ -157,6 +164,59 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
     }
   };
 
+  const handleAddExpense = async () => {
+    if (!car || !newExpense.type || !newExpense.amount) return;
+    setSavingExpense(true);
+    try {
+      const data = {
+        stock_id: car.id,
+        type: newExpense.type,
+        amount: Number(newExpense.amount),
+        net_amount: Number(newExpense.amount),
+        date: newExpense.date || new Date().toISOString().split('T')[0],
+        supplier: newExpense.supplier || null,
+        account_id: 1,
+        is_overhead: false,
+        source: 'manual',
+        status: 'Paid',
+        payment_status: 'paid',
+        currency: 'GBP',
+        vat_amount: 0,
+        vat: 'No',
+        vat_status: 'zero',
+      };
+      const { data: inserted, error } = await supabase.from('expenses').insert(data).select();
+      if (error) throw error;
+      if (inserted && inserted[0]) {
+        setExpenses(prev => [...prev, inserted[0] as Expense]);
+      }
+      setNewExpense({ type: '', amount: '', date: '', supplier: '' });
+      setAddingExpense(false);
+      onSaved(); // refresh data
+    } catch (err) {
+      console.error('Add expense error:', err);
+      alert('Failed to add expense: ' + (err as any).message);
+    } finally {
+      setSavingExpense(false);
+    }
+  };
+
+  const handleDeleteExpense = async (expenseId: number) => {
+    if (!confirm('Delete this expense?')) return;
+    setDeletingExpenseId(expenseId);
+    try {
+      const { error } = await supabase.from('expenses').delete().eq('id', expenseId);
+      if (error) throw error;
+      setExpenses(prev => prev.filter(e => e.id !== expenseId));
+      onSaved(); // refresh data
+    } catch (err) {
+      console.error('Delete expense error:', err);
+      alert('Failed to delete: ' + (err as any).message);
+    } finally {
+      setDeletingExpenseId(null);
+    }
+  };
+
   const addImageUrl = () => {
     if (newImageUrl.trim()) {
       setImages(prev => [...prev, newImageUrl.trim()]);
@@ -182,9 +242,11 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
     return () => window.removeEventListener('keydown', handler);
   }, [onClose]);
 
+  const expenseCount = expenses.length;
   const tabs: { id: Tab; label: string }[] = [
     { id: 'details', label: 'Details' },
     { id: 'financials', label: 'Financials' },
+    { id: 'expenses', label: `Expenses${expenseCount > 0 ? ` (${expenseCount})` : ''}` },
     { id: 'images', label: `Images${images.length > 0 ? ` (${images.length})` : ''}` },
   ];
 
@@ -269,7 +331,7 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
                   key={t.id}
                   onClick={() => setTab(t.id)}
                   className={cn(
-                    'pb-2.5 border-b-2 border-transparent text-[14px] font-normal cursor-pointer bg-transparent transition-colors',
+                    'pb-2.5 border-b-2 border-transparent text-[14px] font-normal cursor-pointer bg-transparent transition-colors whitespace-nowrap',
                     tab === t.id ? 'text-[#2f2b28] !border-[#2f2b28]' : 'text-[#8d867b] hover:text-[#5b5248]'
                   )}
                   style={{ fontFamily: "'Inter Tight', sans-serif" }}
@@ -311,8 +373,21 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
                   <FieldGroup title="Notes">
                     {editing ? (
                       <textarea
-                        value={formData.notes || ''}
-                        onChange={e => updateField('notes', e.target.value)}
+                        value={(() => {
+                          try {
+                            const parsed = formData.notes ? JSON.parse(formData.notes) : null;
+                            return parsed?.text || '';
+                          } catch { return formData.notes || ''; }
+                        })()}
+                        onChange={e => {
+                          // Preserve other JSON fields, update just text
+                          try {
+                            const existing = formData.notes ? JSON.parse(formData.notes) : {};
+                            updateField('notes', JSON.stringify({ ...existing, text: e.target.value }));
+                          } catch {
+                            updateField('notes', JSON.stringify({ text: e.target.value }));
+                          }
+                        }}
                         className="w-full p-3 rounded-[10px] border text-[14px] text-[#14130f] bg-white resize-y min-h-[80px]"
                         style={{ borderColor: 'rgba(20,19,15,0.09)' }}
                         placeholder="Add notes…"
@@ -339,7 +414,6 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
                     <DetailField label="Purchase Price" value={formData.paid} field="paid" editing={editing} onChange={updateField} type="currency" />
                     <DetailField label="Advertised Price" value={formData.advertised} field="advertised" editing={editing} onChange={updateField} type="currency" />
                     <DetailField label="Sale Price" value={formData.sold} field="sold" editing={editing} onChange={updateField} type="currency" />
-                    <DetailField label="Final Sale Price" value={formData.final_sale_price} field="final_sale_price" editing={editing} onChange={updateField} type="currency" />
                     <DetailField label="Deposit Amount" value={formData.deposit_amount} field="deposit_amount" editing={editing} onChange={updateField} type="currency" />
                   </FieldGroup>
 
@@ -371,30 +445,156 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
                       </div>
                     </FieldGroup>
                   )}
+                </>
+              )}
 
-                  {deal && deal.expenses.length > 0 && !isNew && (
-                    <FieldGroup title={`Expenses (${deal.expenses.length})`}>
-                      <div className="border rounded-[14px] overflow-hidden" style={{ borderColor: 'rgba(20,19,15,0.08)' }}>
-                        <table className="w-full border-collapse">
-                          <thead>
-                            <tr className="border-b" style={{ borderColor: 'rgba(20,19,15,0.08)' }}>
-                              <th className="px-3.5 py-2.5 text-left text-[12px] text-[#8d867b] font-normal">Type</th>
-                              <th className="px-3.5 py-2.5 text-left text-[12px] text-[#8d867b] font-normal">Supplier</th>
-                              <th className="px-3.5 py-2.5 text-right text-[12px] text-[#8d867b] font-normal">Amount</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {deal.expenses.map(exp => (
-                              <tr key={exp.id} className="border-b" style={{ borderColor: 'rgba(20,19,15,0.06)' }}>
-                                <td className="px-3.5 py-2.5 text-[13px] text-[#14130f]">{exp.type}</td>
-                                <td className="px-3.5 py-2.5 text-[13px] text-[#958f82]">{exp.supplier || '—'}</td>
-                                <td className="px-3.5 py-2.5 text-[13px] text-[#14130f] text-right">{formatCurrency(exp.amount)}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+              {tab === 'expenses' && (
+                <>
+                  {/* Add expense button / form */}
+                  {!isNew && car && (
+                    <>
+                      {addingExpense ? (
+                        <div className="border rounded-[14px] overflow-hidden" style={{ borderColor: 'rgba(20,19,15,0.08)' }}>
+                          <div className="px-4 py-3 border-b" style={{ borderColor: 'rgba(20,19,15,0.08)', background: '#faf9f7' }}>
+                            <h4 className="text-[12px] uppercase tracking-[0.06em] text-[#7a7368] font-medium">New Expense</h4>
+                          </div>
+                          <div className="px-4 py-3 space-y-3">
+                            <div className="flex flex-col gap-1.5">
+                              <label className="text-[11px] uppercase tracking-[0.08em] text-[#7a7368] font-medium">Type</label>
+                              <select
+                                value={newExpense.type}
+                                onChange={e => setNewExpense(prev => ({ ...prev, type: e.target.value }))}
+                                className="px-3 py-2.5 rounded-[10px] border text-[14px] text-[#14130f] bg-white w-full cursor-pointer"
+                                style={{ borderColor: 'rgba(20,19,15,0.09)' }}
+                              >
+                                <option value="">Select type…</option>
+                                <option value="Vehicle Purchase">Vehicle Purchase</option>
+                                <option value="mechanics">Mechanics</option>
+                                <option value="bodywork">Bodywork</option>
+                                <option value="mot">MOT</option>
+                                <option value="transport">Transport</option>
+                                <option value="valet">Valet</option>
+                                <option value="parts">Parts</option>
+                                <option value="tyres">Tyres</option>
+                                <option value="advertising">Advertising</option>
+                                <option value="other">Other</option>
+                              </select>
+                            </div>
+                            <div className="flex flex-col gap-1.5">
+                              <label className="text-[11px] uppercase tracking-[0.08em] text-[#7a7368] font-medium">Amount (£)</label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={newExpense.amount}
+                                onChange={e => setNewExpense(prev => ({ ...prev, amount: e.target.value }))}
+                                placeholder="0.00"
+                                className="px-3 py-2.5 rounded-[10px] border text-[14px] text-[#14130f] bg-white w-full"
+                                style={{ borderColor: 'rgba(20,19,15,0.09)' }}
+                              />
+                            </div>
+                            <div className="flex flex-col gap-1.5">
+                              <label className="text-[11px] uppercase tracking-[0.08em] text-[#7a7368] font-medium">Supplier</label>
+                              <input
+                                type="text"
+                                value={newExpense.supplier}
+                                onChange={e => setNewExpense(prev => ({ ...prev, supplier: e.target.value }))}
+                                placeholder="e.g. Halfords"
+                                className="px-3 py-2.5 rounded-[10px] border text-[14px] text-[#14130f] bg-white w-full"
+                                style={{ borderColor: 'rgba(20,19,15,0.09)' }}
+                              />
+                            </div>
+                            <div className="flex flex-col gap-1.5">
+                              <label className="text-[11px] uppercase tracking-[0.08em] text-[#7a7368] font-medium">Date</label>
+                              <input
+                                type="date"
+                                value={newExpense.date}
+                                onChange={e => setNewExpense(prev => ({ ...prev, date: e.target.value }))}
+                                className="px-3 py-2.5 rounded-[10px] border text-[14px] text-[#14130f] bg-white w-full"
+                                style={{ borderColor: 'rgba(20,19,15,0.09)' }}
+                              />
+                            </div>
+                            <div className="flex gap-2 pt-1">
+                              <button
+                                onClick={handleAddExpense}
+                                disabled={savingExpense || !newExpense.type || !newExpense.amount}
+                                className="flex-1 py-2.5 rounded-[10px] text-[13px] font-medium bg-[#14130f] text-white border-none cursor-pointer disabled:opacity-40"
+                              >
+                                {savingExpense ? 'Adding…' : 'Add Expense'}
+                              </button>
+                              <button
+                                onClick={() => { setAddingExpense(false); setNewExpense({ type: '', amount: '', date: '', supplier: '' }); }}
+                                className="px-4 py-2.5 rounded-[10px] text-[13px] font-medium bg-white text-[#3a3731] border cursor-pointer"
+                                style={{ borderColor: 'rgba(20,19,15,0.09)' }}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setAddingExpense(true)}
+                          className="w-full py-2.5 rounded-[12px] text-[13px] font-medium bg-[#14130f] text-white border-none cursor-pointer"
+                        >
+                          + Add Expense
+                        </button>
+                      )}
+                    </>
+                  )}
+
+                  {/* Expenses list */}
+                  {expenses.length > 0 ? (
+                    <div className="border rounded-[14px] overflow-hidden" style={{ borderColor: 'rgba(20,19,15,0.08)' }}>
+                      <div className="px-4 py-3 border-b" style={{ borderColor: 'rgba(20,19,15,0.08)', background: '#faf9f7' }}>
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-[12px] uppercase tracking-[0.06em] text-[#7a7368] font-medium">
+                            All Expenses
+                          </h4>
+                          <span className="text-[13px] font-medium text-[#2f2b28]">
+                            {formatCurrency(expenses.reduce((sum, e) => sum + (e.amount || 0), 0))}
+                          </span>
+                        </div>
                       </div>
-                    </FieldGroup>
+                      <table className="w-full border-collapse">
+                        <thead>
+                          <tr className="border-b" style={{ borderColor: 'rgba(20,19,15,0.08)' }}>
+                            <th className="px-4 py-2.5 text-left text-[12px] text-[#8d867b] font-normal">Type</th>
+                            <th className="px-4 py-2.5 text-left text-[12px] text-[#8d867b] font-normal">Supplier</th>
+                            <th className="px-4 py-2.5 text-right text-[12px] text-[#8d867b] font-normal">Amount</th>
+                            <th className="px-2 py-2.5 w-8"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {expenses.map(exp => (
+                            <tr key={exp.id} className="border-b group" style={{ borderColor: 'rgba(20,19,15,0.06)' }}>
+                              <td className="px-4 py-2.5">
+                                <div className="text-[13px] text-[#14130f] capitalize">{exp.type}</div>
+                                {exp.date && <div className="text-[11px] text-[#a39c8f]">{formatDate(exp.date)}</div>}
+                              </td>
+                              <td className="px-4 py-2.5 text-[13px] text-[#958f82]">{exp.supplier || '—'}</td>
+                              <td className="px-4 py-2.5 text-[13px] text-[#14130f] text-right">{formatCurrency(exp.amount)}</td>
+                              <td className="px-2 py-2.5">
+                                <button
+                                  onClick={() => handleDeleteExpense(exp.id)}
+                                  disabled={deletingExpenseId === exp.id}
+                                  className="w-6 h-6 rounded-full flex items-center justify-center text-[#d96b61] opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer bg-transparent border-none text-sm hover:bg-red-50"
+                                  title="Delete expense"
+                                >
+                                  {deletingExpenseId === exp.id ? '…' : '×'}
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    !addingExpense && (
+                      <div className="py-10 text-center rounded-[10px] border-2 border-dashed" style={{ borderColor: 'rgba(20,19,15,0.1)' }}>
+                        <p className="text-[#958f82] text-sm">No expenses logged</p>
+                        {!isNew && <p className="text-[#a39c8f] text-xs mt-1">Click &quot;Add Expense&quot; to start tracking</p>}
+                      </div>
+                    )
                   )}
                 </>
               )}
