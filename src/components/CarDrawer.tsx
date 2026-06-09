@@ -40,7 +40,9 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
   const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState<Record<string, any>>({});
   const [images, setImages] = useState<string[]>([]);
-  const [newImageUrl, setNewImageUrl] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [mileage, setMileage] = useState('');
   // Expenses state
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -217,15 +219,56 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
     }
   };
 
-  const addImageUrl = () => {
-    if (newImageUrl.trim()) {
-      setImages(prev => [...prev, newImageUrl.trim()]);
-      setNewImageUrl('');
+  const BUCKET = 'car-images';
+
+  const uploadFiles = async (files: FileList | File[]) => {
+    const carId = car?.id ?? 'new';
+    setUploading(true);
+    try {
+      const newUrls: string[] = [];
+      for (const file of Array.from(files)) {
+        const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+        const path = `${carId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+        const { error } = await supabase.storage.from(BUCKET).upload(path, file, {
+          cacheControl: '3600',
+          upsert: false,
+        });
+        if (error) { console.error('Upload error:', error); continue; }
+        const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(path);
+        if (urlData?.publicUrl) newUrls.push(urlData.publicUrl);
+      }
+      if (newUrls.length > 0) setImages(prev => [...prev, ...newUrls]);
+    } catch (err) {
+      console.error('Upload error:', err);
+      alert('Failed to upload: ' + (err as any).message);
+    } finally {
+      setUploading(false);
     }
   };
 
-  const removeImage = (index: number) => {
+  const removeImage = async (index: number) => {
+    const url = images[index];
+    // Try to delete from storage
+    try {
+      const match = url.match(/\/car-images\/(.+)$/);
+      if (match) {
+        await supabase.storage.from(BUCKET).remove([match[1]]);
+      }
+    } catch { /* ignore delete errors */ }
     setImages(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    if (e.dataTransfer.files.length > 0) uploadFiles(e.dataTransfer.files);
+  };
+
+  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      uploadFiles(e.target.files);
+      e.target.value = ''; // reset so same file can be re-selected
+    }
   };
 
   // Close on backdrop click
@@ -601,6 +644,48 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
 
               {tab === 'images' && (
                 <>
+                  {/* Upload area (always visible in edit mode, or when no images) */}
+                  {editing && (
+                    <div
+                      onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+                      onDragLeave={() => setDragOver(false)}
+                      onDrop={handleDrop}
+                      onClick={() => fileInputRef.current?.click()}
+                      className="relative rounded-[14px] border-2 border-dashed cursor-pointer transition-colors"
+                      style={{
+                        borderColor: dragOver ? '#35a7f6' : 'rgba(20,19,15,0.12)',
+                        background: dragOver ? 'rgba(53,167,246,0.04)' : '#faf9f7',
+                      }}
+                    >
+                      <div className="flex flex-col items-center py-8 px-4">
+                        <div className="w-10 h-10 rounded-full flex items-center justify-center mb-3"
+                          style={{ background: dragOver ? 'rgba(53,167,246,0.12)' : 'rgba(20,19,15,0.06)' }}>
+                          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M10 3v10m0-10L6 7m4-4l4 4M3 14l.9 2.7A1 1 0 004.8 17.5h10.4a1 1 0 00.9-.8L17 14" stroke={dragOver ? '#35a7f6' : '#8d867b'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                        </div>
+                        {uploading ? (
+                          <p className="text-[14px] text-[#35a7f6] font-medium">Uploading…</p>
+                        ) : (
+                          <>
+                            <p className="text-[14px] text-[#2f2b28] font-medium">
+                              {dragOver ? 'Drop images here' : 'Drag & drop images'}
+                            </p>
+                            <p className="text-[12px] text-[#958f82] mt-1">or click to browse • JPG, PNG, WebP up to 10MB</p>
+                          </>
+                        )}
+                      </div>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp,image/gif"
+                        multiple
+                        onChange={handleFileInput}
+                        className="hidden"
+                      />
+                    </div>
+                  )}
+
                   {/* Image grid */}
                   {images.length > 0 ? (
                     <div className="grid grid-cols-2 gap-3">
@@ -626,40 +711,12 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
                       ))}
                     </div>
                   ) : (
-                    <div className="py-10 text-center rounded-[10px] border-2 border-dashed" style={{ borderColor: 'rgba(20,19,15,0.1)' }}>
-                      <p className="text-[#958f82] text-sm">No images yet</p>
-                      {!editing && <p className="text-[#a39c8f] text-xs mt-1">Click Edit to add images</p>}
-                    </div>
-                  )}
-
-                  {/* Add image URL */}
-                  {editing && (
-                    <div className="space-y-2 mt-4">
-                      <label className="text-[11px] uppercase tracking-[0.08em] text-[#7a7368] font-medium">
-                        Add Image URL
-                      </label>
-                      <div className="flex gap-2">
-                        <input
-                          type="url"
-                          value={newImageUrl}
-                          onChange={e => setNewImageUrl(e.target.value)}
-                          onKeyDown={e => { if (e.key === 'Enter') addImageUrl(); }}
-                          placeholder="https://..."
-                          className="flex-1 px-3 py-2.5 rounded-[10px] border text-[14px] bg-white"
-                          style={{ borderColor: 'rgba(20,19,15,0.09)' }}
-                        />
-                        <button
-                          onClick={addImageUrl}
-                          disabled={!newImageUrl.trim()}
-                          className="px-4 py-2.5 rounded-[10px] text-[13px] font-medium bg-[#14130f] text-white border-none cursor-pointer disabled:opacity-40"
-                        >
-                          Add
-                        </button>
+                    !editing && (
+                      <div className="py-10 text-center rounded-[10px] border-2 border-dashed" style={{ borderColor: 'rgba(20,19,15,0.1)' }}>
+                        <p className="text-[#958f82] text-sm">No images yet</p>
+                        <p className="text-[#a39c8f] text-xs mt-1">Click Edit to upload images</p>
                       </div>
-                      <p className="text-[11px] text-[#a39c8f]">
-                        Paste a URL to any car image (e.g. from AutoTrader listings)
-                      </p>
-                    </div>
+                    )
                   )}
                 </>
               )}
