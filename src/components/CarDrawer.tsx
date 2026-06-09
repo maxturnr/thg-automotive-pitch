@@ -784,6 +784,52 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
                             <ComputedRow label="ROI" value={`${deal.roi}%`} valueColor="#35a7f6" />
                           )}
                         </div>
+
+                        {/* VAT breakdown */}
+                        {deal.car.purchase_vat_type && deal.car.purchase_vat_type !== 'no_vat' && (() => {
+                          const isMargin = deal.car.purchase_vat_type === 'margin';
+                          const isPlusVat = deal.car.purchase_vat_type === 'plus_vat';
+
+                          // VAT on margin: 1/6 of profit margin (margin is VAT-inclusive)
+                          const marginVat = isMargin && deal.netProfit > 0
+                            ? Math.round((deal.netProfit / 6) * 100) / 100
+                            : 0;
+
+                          // Output VAT for plus_vat: 1/6 of sale price
+                          const outputVat = isPlusVat && deal.salePrice > 0
+                            ? Math.round((deal.salePrice / 6) * 100) / 100
+                            : 0;
+
+                          // Reclaimable: sum of vat_amount from expenses
+                          // Margin scheme: only non-purchase expenses; Plus VAT: all expenses
+                          const reclaimableVat = deal.expenses
+                            .filter(e => isPlusVat || (e.type?.toLowerCase() !== 'vehicle purchase' && e.type?.toLowerCase() !== 'vehicle_purchase'))
+                            .reduce((sum, e) => sum + (e.vat_amount || 0), 0);
+
+                          const vatOwed = isMargin ? marginVat : outputVat;
+                          const netVat = Math.round((vatOwed - reclaimableVat) * 100) / 100;
+
+                          return (
+                            <div className="pt-2 border-t" style={{ borderColor: 'rgba(20,19,15,0.09)' }}>
+                              {isMargin && marginVat > 0 && (
+                                <ComputedRow label="VAT on Margin" value={formatCurrency(marginVat)} sub="1/6 of profit" />
+                              )}
+                              {isPlusVat && outputVat > 0 && (
+                                <ComputedRow label="Output VAT" value={formatCurrency(outputVat)} sub="1/6 of sale price" />
+                              )}
+                              {reclaimableVat > 0 && (
+                                <ComputedRow label="VAT Reclaimable" value={`−${formatCurrency(reclaimableVat)}`} valueColor="#35a7f6" />
+                              )}
+                              <ComputedRow
+                                label="Net VAT"
+                                value={`${netVat >= 0 ? '' : '−'}${formatCurrency(Math.abs(netVat))}`}
+                                valueColor={netVat < 0 ? '#23a56b' : netVat > 0 ? '#d96b61' : undefined}
+                                bold
+                                sub={netVat > 0 ? 'Owed to HMRC' : netVat < 0 ? 'Reclaimable' : ''}
+                              />
+                            </div>
+                          );
+                        })()}
                       </div>
                     </FieldGroup>
                   )}
