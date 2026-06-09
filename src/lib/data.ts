@@ -24,6 +24,8 @@ export interface Car {
   final_sale_price: number | null;
   owner_payout_amount: number | null;
   stock_number_text: string | null;
+  notes: string | null;
+  owner_name: string | null;
 }
 
 export interface Expense {

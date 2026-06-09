@@ -11,9 +11,10 @@ import { useMemo } from 'react';
 interface OverviewProps {
   deals: DealSummary[];
   stats: Stats;
+  onSelectDeal?: (deal: DealSummary) => void;
 }
 
-export default function Overview({ deals, stats }: OverviewProps) {
+export default function Overview({ deals, stats, onSelectDeal }: OverviewProps) {
   const soldDeals = deals.filter(d => d.car.status === 'Sold');
   const inStock = deals.filter(d => d.car.status === 'In Stock' || d.car.status === 'On Site');
 
@@ -144,7 +145,7 @@ export default function Overview({ deals, stats }: OverviewProps) {
           </div>
           <div className="flex-1 space-y-1 overflow-y-auto max-h-[260px]">
             {inStock.map(d => (
-              <div key={d.car.id} className="flex items-center justify-between py-2 px-2 rounded-md hover:bg-[#fbfaf8] transition-colors">
+              <div key={d.car.id} onClick={() => onSelectDeal?.(d)} className="flex items-center justify-between py-2 px-2 rounded-md hover:bg-[#fbfaf8] transition-colors cursor-pointer">
                 <div className="min-w-0">
                   <div className="text-[13px] font-medium text-[#14130f] truncate">
                     {d.car.make} {d.car.model}

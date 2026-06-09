@@ -9,9 +9,11 @@ type FilterType = 'all' | 'sold' | 'in_stock' | 'owned' | 'sor';
 
 interface DealsTableProps {
   deals: DealSummary[];
+  onSelectDeal: (deal: DealSummary) => void;
+  onAddNew: () => void;
 }
 
-export default function DealsTable({ deals }: DealsTableProps) {
+export default function DealsTable({ deals, onSelectDeal, onAddNew }: DealsTableProps) {
   const [sortKey, setSortKey] = useState<SortKey>('purchase_date');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [filter, setFilter] = useState<FilterType>('all');
@@ -84,9 +86,17 @@ export default function DealsTable({ deals }: DealsTableProps) {
             Deal History
           </h1>
           <p className="text-xs text-[#7a7368] mt-2 uppercase tracking-wide">
-            Every vehicle with full financial breakdown
+            Click any vehicle to view details • Every vehicle with full financial breakdown
           </p>
         </div>
+        <button
+          onClick={onAddNew}
+          className="h-[36px] px-4 rounded-[10px] text-[13px] font-medium bg-[#14130f] text-white border-none cursor-pointer flex items-center gap-2 hover:bg-[#2f2b28] transition-colors"
+          style={{ fontFamily: "'Inter Tight', sans-serif" }}
+        >
+          <span className="text-lg leading-none">+</span>
+          Add Vehicle
+        </button>
       </div>
 
       {/* Table surface */}
@@ -140,7 +150,8 @@ export default function DealsTable({ deals }: DealsTableProps) {
               {sorted.map(deal => (
                 <tr
                   key={deal.car.id}
-                  className="border-b hover:bg-[#fbfaf8] transition-colors"
+                  onClick={() => onSelectDeal(deal)}
+                  className="border-b hover:bg-[#fbfaf8] transition-colors cursor-pointer"
                   style={{ borderColor: 'rgba(20,19,15,0.06)' }}
                 >
                   <td className="px-7 py-3">
