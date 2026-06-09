@@ -179,6 +179,64 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
     }
   };
 
+  // Run AutoTrader lookup on an existing car and save to Supabase
+  const handleRunLookup = async () => {
+    const reg = formData.reg?.trim();
+    if (!reg || !car) return;
+    setLookingUp(true);
+    setLookupError('');
+    try {
+      const res = await fetch('/api/vehicle-lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ registration: reg }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setLookupError(data.error || 'Lookup failed');
+        return;
+      }
+      const data = await res.json();
+      const v = data.vehicle;
+      const updates: Record<string, any> = {};
+      if (v.make) updates.make = v.make;
+      if (v.model) updates.model = v.model;
+      if (v.colour) updates.colour = v.colour;
+      if (v.fuel_type) updates.fuel_type = v.fuel_type;
+      if (v.body_type) updates.body_type = v.body_type;
+      if (v.transmission) updates.transmission = v.transmission;
+      if (v.year) updates.year = v.year;
+      if (v.engine_size) updates.engine_size = v.engine_size;
+      if (v.doors) updates.doors = v.doors;
+      if (v.seats) updates.seats = v.seats;
+      if (v.derivative) updates.derivative = v.derivative;
+      if (v.vin) updates.vin = v.vin;
+      if (v.engine_power_bhp) updates.engine_power_bhp = v.engine_power_bhp;
+      if (v.co2_emissions) updates.co2_emissions = v.co2_emissions;
+      if (v.retail_value) updates.retail_value = v.retail_value;
+      if (v.trade_value) updates.trade_value = v.trade_value;
+
+      if (Object.keys(updates).length === 0) {
+        setLookupError('No data found for this registration');
+        return;
+      }
+      // Save to Supabase
+      const { error } = await supabase.from('cars').update(updates).eq('id', car.id);
+      if (error) {
+        setLookupError(`Save failed: ${error.message}`);
+        return;
+      }
+      // Update local form data
+      setFormData(prev => ({ ...prev, ...updates }));
+      setLookupError('');
+      onSaved(); // refresh parent data
+    } catch (err: any) {
+      setLookupError(err.message || 'Lookup failed');
+    } finally {
+      setLookingUp(false);
+    }
+  };
+
   const updateField = (key: string, value: any) => {
     setFormData(prev => ({ ...prev, [key]: value }));
   };
@@ -530,6 +588,21 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
               {tab === 'details' && (
                 <>
                   <FieldGroup title="Vehicle Info">
+                    {/* Run Lookup button for existing cars without lookup data */}
+                    {!isNew && !editing && formData.reg && !formData.vin && (
+                      <div className="pb-3 mb-1">
+                        <button
+                          onClick={handleRunLookup}
+                          disabled={lookingUp}
+                          className="w-full py-2.5 rounded-[10px] text-[13px] font-medium border-none cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
+                          style={{ background: 'rgba(53,167,246,0.08)', color: '#35a7f6' }}
+                        >
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                          {lookingUp ? 'Looking up…' : 'Run AutoTrader Lookup'}
+                        </button>
+                        {lookupError && <p className="text-[12px] text-[#d96b61] mt-1.5 text-center">{lookupError}</p>}
+                      </div>
+                    )}
                     <DetailField label="Make" value={formData.make} field="make" editing={editing} onChange={updateField} />
                     <DetailField label="Model" value={formData.model} field="model" editing={editing} onChange={updateField} />
                     <DetailField label="Registration" value={formData.reg} field="reg" editing={editing} onChange={updateField} />
