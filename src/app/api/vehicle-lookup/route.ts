@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
 
     const params = new URLSearchParams({
       advertiserId,
-      registration: registration.trim().toLowerCase(),
+      registration: registration.trim().replace(/\s+/g, '').toLowerCase(),
       valuations: 'true',
     });
 
