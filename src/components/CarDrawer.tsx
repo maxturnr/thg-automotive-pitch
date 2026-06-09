@@ -136,8 +136,9 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
       data.notes = Object.keys(notesObj).length > 0 ? JSON.stringify(notesObj) : null;
 
       if (isNew) {
-        data.account_id = 1;
+        data.reg = data.reg || '';
         data.registration = data.reg;
+        data.account_id = 1;
         data.total_income = 0;
         const { error } = await supabase.from('cars').insert(data);
         if (error) throw error;
