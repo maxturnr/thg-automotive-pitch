@@ -141,47 +141,56 @@ export function computeDeals(cars: Car[], expenses: Expense[], income: Income[])
     const carExpenses = expensesByStock.get(car.id) || [];
     const carIncome = incomeByStock.get(car.id) || [];
 
-    // All costs at gross (what was actually paid)
+    // ── VAT scheme ──
+    const isMargin = car.purchase_vat_type === 'margin';
+    const isPlusVat = car.purchase_vat_type === 'plus_vat';
+    const canReclaimPrep = isMargin || isPlusVat;
+    const canReclaimPurchase = isPlusVat; // margin can't reclaim on purchase
+
+    // Use net (ex VAT) for costs where VAT is reclaimable
+    const netAmount = (e: Expense) =>
+      e.net_amount != null ? e.net_amount : (e.amount || 0);
+
     const purchaseExpense = carExpenses.find(e => 
       e.type?.toLowerCase() === 'vehicle purchase' || e.type?.toLowerCase() === 'vehicle_purchase'
     );
-    const purchasePrice = purchaseExpense?.amount ?? car.paid ?? 0;
+    const purchasePrice = purchaseExpense
+      ? (canReclaimPurchase ? netAmount(purchaseExpense) : (purchaseExpense.amount || 0))
+      : (car.paid ?? 0);
 
     const prepExpenses = carExpenses
       .filter(e => e.type?.toLowerCase() !== 'vehicle purchase' && e.type?.toLowerCase() !== 'vehicle_purchase');
-    const prepCosts = prepExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+    // Prep costs: ex VAT when on a reclaimable scheme
+    const prepCosts = prepExpenses.reduce((sum, e) =>
+      sum + (canReclaimPrep ? netAmount(e) : (e.amount || 0)), 0);
 
     const totalCosts = purchasePrice + prepCosts;
 
-    // Income: sum from income table or fall back to car.total_income
+    // VAT reclaimed (informational — already reflected in net costs)
+    const vatReclaimable = canReclaimPrep
+      ? (canReclaimPurchase ? carExpenses : prepExpenses)
+          .reduce((sum, e) => sum + (e.vat_amount || 0), 0)
+      : 0;
+
+    // Income
     const incomeTotal = carIncome.reduce((sum, i) => sum + (i.amount || 0), 0);
     const totalIncome = incomeTotal > 0 ? incomeTotal : (car.total_income || 0);
 
     // Sale price
     const salePrice = car.sold || car.final_sale_price || totalIncome || 0;
 
-    // ── VAT computation ──
-    const isMargin = car.purchase_vat_type === 'margin';
-    const isPlusVat = car.purchase_vat_type === 'plus_vat';
-
-    // VAT owed: margin = 1/6 of (sale - purchase); plus_vat = 1/6 of sale
-    const salePurchaseDiff = salePrice - purchasePrice;
-    const vatOwed = isMargin && salePurchaseDiff > 0
-      ? Math.round((salePurchaseDiff / 6) * 100) / 100
+    // VAT owed: margin = 1/6 of (sale − purchase gross); plus_vat = 1/6 of sale
+    const purchaseGross = purchaseExpense?.amount ?? car.paid ?? 0;
+    const vatOwed = isMargin && salePrice > purchaseGross
+      ? Math.round(((salePrice - purchaseGross) / 6) * 100) / 100
       : isPlusVat && salePrice > 0
       ? Math.round((salePrice / 6) * 100) / 100
       : 0;
 
-    // VAT reclaimable: margin = non-purchase expense VAT; plus_vat = all expense VAT
-    const vatReclaimable = isMargin
-      ? prepExpenses.reduce((sum, e) => sum + (e.vat_amount || 0), 0)
-      : isPlusVat
-      ? carExpenses.reduce((sum, e) => sum + (e.vat_amount || 0), 0)
-      : 0;
+    // Net VAT = what you owe (reclaims already in net costs)
+    const netVat = vatOwed;
 
-    const netVat = Math.round((vatOwed - vatReclaimable) * 100) / 100;
-
-    // Net profit: sale - buy - prep - vat owed + vat reclaims
+    // Net profit: sale − buy(net) − prep(net) − VAT owed
     let netProfit: number;
     if (car.type === 'sor' || car.is_sale_or_return) {
       if (car.fee != null && car.fee > 0) {
@@ -192,8 +201,7 @@ export function computeDeals(cars: Car[], expenses: Expense[], income: Income[])
         netProfit = totalIncome - prepCosts;
       }
     } else {
-      // Owned: sale price - buy price - prep costs - net VAT
-      netProfit = salePrice - totalCosts - netVat;
+      netProfit = salePrice - totalCosts - vatOwed;
     }
 
     // ROI: only for owned with capital deployed

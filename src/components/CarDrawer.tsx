@@ -767,7 +767,11 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
                     <FieldGroup title="Computed">
                       <div className="space-y-2">
                         <ComputedRow label="Purchase Price" value={formatCurrency(deal.purchasePrice)} />
-                        <ComputedRow label="Prep Costs" value={formatCurrency(deal.prepCosts)} sub={`${deal.expenses.filter(e => e.type?.toLowerCase() !== 'vehicle purchase').length} expenses`} />
+                        <ComputedRow
+                          label="Prep Costs"
+                          value={formatCurrency(deal.prepCosts)}
+                          sub={`${deal.expenses.filter(e => e.type?.toLowerCase() !== 'vehicle purchase').length} expenses${deal.car.purchase_vat_type && deal.car.purchase_vat_type !== 'no_vat' ? ' · excl VAT' : ''}`}
+                        />
                         
                         <ComputedRow label="Total Costs" value={formatCurrency(deal.totalCosts)} bold />
                         <ComputedRow label="Total Income" value={formatCurrency(deal.totalIncome)} />
@@ -782,14 +786,13 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
                               <ComputedRow label="Output VAT" value={deal.vatOwed > 0 ? formatCurrency(deal.vatOwed) : '£0'} sub="1/6 of sale price" />
                             )}
                             {deal.vatReclaimable > 0 && (
-                              <ComputedRow label="VAT Reclaimable" value={`−${formatCurrency(deal.vatReclaimable)}`} valueColor="#35a7f6" />
+                              <ComputedRow label="VAT Reclaimed" value={`−${formatCurrency(deal.vatReclaimable)}`} valueColor="#23a56b" sub="in prep costs" />
                             )}
                             <ComputedRow
-                              label="Net VAT"
-                              value={`${deal.netVat >= 0 ? '' : '−'}${formatCurrency(Math.abs(deal.netVat))}`}
-                              valueColor={deal.netVat < 0 ? '#23a56b' : deal.netVat > 0 ? '#d96b61' : undefined}
+                              label="Net VAT Owed"
+                              value={formatCurrency(deal.netVat)}
+                              valueColor={deal.netVat > 0 ? '#d96b61' : undefined}
                               bold
-                              sub={deal.netVat > 0 ? 'Owed to HMRC' : deal.netVat < 0 ? 'Reclaimable' : ''}
                             />
                           </div>
                         )}
