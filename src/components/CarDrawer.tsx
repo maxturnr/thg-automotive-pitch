@@ -820,6 +820,7 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
                                 <option value="parts">Parts</option>
                                 <option value="tyres">Tyres</option>
                                 <option value="advertising">Advertising</option>
+                                <option value="warranty">Warranty</option>
                                 <option value="other">Other</option>
                               </select>
                             </div>
