@@ -45,10 +45,13 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
 
   const car = deal?.car;
 
+  const [mileage, setMileage] = useState('');
+
   // Initialize form data
   useEffect(() => {
     if (isNew) {
       setFormData({ ...emptyCarData });
+      setMileage('');
     } else if (car) {
       setFormData({
         make: car.make || '',
@@ -71,14 +74,17 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
         owner_payout_amount: car.owner_payout_amount ?? '',
         owner_name: (car as any).owner_name || '',
       });
-      // Load images from notes (stored as JSON array)
+      // Load extras from notes JSON (images, mileage)
       try {
         const parsed = car.notes ? JSON.parse(car.notes) : null;
         if (parsed?.images && Array.isArray(parsed.images)) {
           setImages(parsed.images);
         }
+        if (parsed?.mileage != null) {
+          setMileage(String(parsed.mileage));
+        }
       } catch {
-        // notes is plain text, no images
+        // notes is plain text, no extras
       }
     }
   }, [car, isNew]);
@@ -90,32 +96,43 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
   const handleSave = async () => {
     setSaving(true);
     try {
-      // Build save data - clean up types
+      // Helpers to clean form values — empty strings must become null for Postgres
+      const toStr = (v: any) => (v != null && String(v).trim() !== '') ? String(v).trim() : null;
+      const toNum = (v: any) => (v != null && String(v).trim() !== '' && !isNaN(Number(v))) ? Number(v) : null;
+      const toDate = (v: any) => (v != null && String(v).trim() !== '') ? String(v).trim() : null;
+
       const data: Record<string, any> = {
-        make: formData.make || null,
-        model: formData.model || null,
-        reg: formData.reg || null,
+        make: toStr(formData.make),
+        model: toStr(formData.model),
+        reg: toStr(formData.reg),
         status: formData.status || 'In Stock',
         type: formData.is_sale_or_return ? 'sor' : (formData.type || 'owned'),
-        paid: formData.paid ? Number(formData.paid) : null,
-        sold: formData.sold ? Number(formData.sold) : null,
-        purchase_date: formData.purchase_date || null,
-        sale_date: formData.sale_date || null,
-        deposit_date: formData.deposit_date || null,
-        deposit_amount: formData.deposit_amount ? Number(formData.deposit_amount) : 0,
-        advertised: formData.advertised ? Number(formData.advertised) : null,
-        advertised_date: formData.advertised_date || null,
-        fee: formData.fee ? Number(formData.fee) : null,
+        paid: toNum(formData.paid),
+        sold: toNum(formData.sold),
+        purchase_date: toDate(formData.purchase_date),
+        sale_date: toDate(formData.sale_date),
+        deposit_date: toDate(formData.deposit_date),
+        deposit_amount: toNum(formData.deposit_amount) ?? 0,
+        advertised: toNum(formData.advertised),
+        advertised_date: toDate(formData.advertised_date),
+        fee: toNum(formData.fee),
         is_sale_or_return: formData.is_sale_or_return || false,
-        final_sale_price: formData.final_sale_price ? Number(formData.final_sale_price) : null,
-        owner_payout_amount: formData.owner_payout_amount ? Number(formData.owner_payout_amount) : null,
+        final_sale_price: toNum(formData.final_sale_price),
+        owner_payout_amount: toNum(formData.owner_payout_amount),
       };
 
-      // Store images in notes as JSON
+      // Store extras (images, mileage) in notes as JSON
       const notesObj: any = {};
-      const plainNotes = formData.notes || '';
-      if (plainNotes) notesObj.text = plainNotes;
+      const plainNotes = typeof formData.notes === 'string' ? formData.notes : '';
+      // If notes is already JSON, extract just the text part
+      let textNotes = plainNotes;
+      try {
+        const parsed = JSON.parse(plainNotes);
+        textNotes = parsed?.text || '';
+      } catch { /* plain text */ }
+      if (textNotes) notesObj.text = textNotes;
       if (images.length > 0) notesObj.images = images;
+      if (mileage && !isNaN(Number(mileage))) notesObj.mileage = Number(mileage);
       data.notes = Object.keys(notesObj).length > 0 ? JSON.stringify(notesObj) : null;
 
       if (isNew) {
@@ -268,7 +285,8 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
                   <FieldGroup title="Vehicle Info">
                     <DetailField label="Make" value={formData.make} field="make" editing={editing} onChange={updateField} />
                     <DetailField label="Model" value={formData.model} field="model" editing={editing} onChange={updateField} />
-                    <DetailField label="Registration" value={formData.reg} field="reg" editing={editing} />
+                    <DetailField label="Registration" value={formData.reg} field="reg" editing={editing} onChange={updateField} />
+                    <MileageField mileage={mileage} editing={editing} onChange={setMileage} />
                     <DetailField label="Type" value={formData.type} field="type" editing={editing} onChange={updateField}
                       options={[{ value: 'owned', label: 'Owned' }, { value: 'sor', label: 'Sale or Return' }]} />
                     {(formData.type === 'sor' || formData.is_sale_or_return) && (
@@ -278,9 +296,9 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
 
                   <FieldGroup title="Timeline">
                     <DetailField label="Purchase Date" value={formData.purchase_date} field="purchase_date" editing={editing} onChange={updateField} type="date" />
-                    <DetailField label="Sale Date" value={formData.sale_date} field="sale_date" editing={editing} onChange={updateField} type="date" />
-                    <DetailField label="Deposit Date" value={formData.deposit_date} field="deposit_date" editing={editing} onChange={updateField} type="date" />
                     <DetailField label="Advertised Date" value={formData.advertised_date} field="advertised_date" editing={editing} onChange={updateField} type="date" />
+                    <DetailField label="Deposit Date" value={formData.deposit_date} field="deposit_date" editing={editing} onChange={updateField} type="date" />
+                    <DetailField label="Sale Date" value={formData.sale_date} field="sale_date" editing={editing} onChange={updateField} type="date" />
                     {deal?.holdDays != null && deal.holdDays > 0 && !editing && (
                       <div className="flex justify-between py-3 border-b" style={{ borderColor: 'rgba(20,19,15,0.06)' }}>
                         <span className="text-[13px] text-[#7f786d]">Hold Period</span>
@@ -543,6 +561,31 @@ function DetailField({
           style={{ borderColor: 'rgba(20,19,15,0.09)' }}
         />
       )}
+    </div>
+  );
+}
+
+function MileageField({ mileage, editing, onChange }: { mileage: string; editing: boolean; onChange: (v: string) => void }) {
+  const formatted = mileage ? Number(mileage).toLocaleString('en-GB') + ' mi' : '—';
+  if (!editing) {
+    return (
+      <div className="flex justify-between items-center py-3 border-b" style={{ borderColor: 'rgba(20,19,15,0.06)' }}>
+        <span className="text-[13px] text-[#7f786d]">Mileage</span>
+        <span className="text-[14px] text-[#2f2b28] text-right">{formatted}</span>
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-1.5 py-2.5 border-b" style={{ borderColor: 'rgba(20,19,15,0.06)' }}>
+      <label className="text-[11px] uppercase tracking-[0.08em] text-[#7a7368] font-medium">Mileage</label>
+      <input
+        type="number"
+        value={mileage}
+        onChange={e => onChange(e.target.value)}
+        placeholder="e.g. 45000"
+        className="px-3 py-2.5 rounded-[10px] border text-[14px] text-[#14130f] bg-white w-full"
+        style={{ borderColor: 'rgba(20,19,15,0.09)' }}
+      />
     </div>
   );
 }
