@@ -773,26 +773,16 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
                         )}
                         <ComputedRow label="Total Costs" value={formatCurrency(deal.totalCosts)} bold />
                         <ComputedRow label="Total Income" value={formatCurrency(deal.totalIncome)} />
-                        <div className="pt-2 border-t" style={{ borderColor: 'rgba(20,19,15,0.09)' }}>
-                          <ComputedRow
-                            label="Net Profit"
-                            value={`${deal.netProfit > 0 ? '+' : ''}${formatCurrency(deal.netProfit)}`}
-                            valueColor={deal.netProfit > 0 ? '#23a56b' : deal.netProfit < 0 ? '#d96b61' : undefined}
-                            bold
-                          />
-                          {deal.roi !== null && (
-                            <ComputedRow label="ROI" value={`${deal.roi}%`} valueColor="#35a7f6" />
-                          )}
-                        </div>
 
-                        {/* VAT breakdown */}
+                        {/* VAT breakdown — before net profit */}
                         {deal.car.purchase_vat_type && deal.car.purchase_vat_type !== 'no_vat' && (() => {
                           const isMargin = deal.car.purchase_vat_type === 'margin';
                           const isPlusVat = deal.car.purchase_vat_type === 'plus_vat';
 
-                          // VAT on margin: 1/6 of profit margin (margin is VAT-inclusive)
-                          const marginVat = isMargin && deal.netProfit > 0
-                            ? Math.round((deal.netProfit / 6) * 100) / 100
+                          // VAT margin: 1/6 of (sale price − purchase price)
+                          const salePurchaseDiff = deal.salePrice - deal.purchasePrice;
+                          const marginVat = isMargin && salePurchaseDiff > 0
+                            ? Math.round((salePurchaseDiff / 6) * 100) / 100
                             : 0;
 
                           // Output VAT for plus_vat: 1/6 of sale price
@@ -811,11 +801,11 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
 
                           return (
                             <div className="pt-2 border-t" style={{ borderColor: 'rgba(20,19,15,0.09)' }}>
-                              {isMargin && marginVat > 0 && (
-                                <ComputedRow label="VAT on Margin" value={formatCurrency(marginVat)} sub="1/6 of profit" />
+                              {isMargin && (
+                                <ComputedRow label="VAT on Margin" value={marginVat > 0 ? formatCurrency(marginVat) : '£0'} sub="1/6 of sale − purchase" />
                               )}
-                              {isPlusVat && outputVat > 0 && (
-                                <ComputedRow label="Output VAT" value={formatCurrency(outputVat)} sub="1/6 of sale price" />
+                              {isPlusVat && (
+                                <ComputedRow label="Output VAT" value={outputVat > 0 ? formatCurrency(outputVat) : '£0'} sub="1/6 of sale price" />
                               )}
                               {reclaimableVat > 0 && (
                                 <ComputedRow label="VAT Reclaimable" value={`−${formatCurrency(reclaimableVat)}`} valueColor="#35a7f6" />
@@ -830,6 +820,18 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
                             </div>
                           );
                         })()}
+
+                        <div className="pt-2 border-t" style={{ borderColor: 'rgba(20,19,15,0.09)' }}>
+                          <ComputedRow
+                            label="Net Profit"
+                            value={`${deal.netProfit > 0 ? '+' : ''}${formatCurrency(deal.netProfit)}`}
+                            valueColor={deal.netProfit > 0 ? '#23a56b' : deal.netProfit < 0 ? '#d96b61' : undefined}
+                            bold
+                          />
+                          {deal.roi !== null && (
+                            <ComputedRow label="ROI" value={`${deal.roi}%`} valueColor="#35a7f6" />
+                          )}
+                        </div>
                       </div>
                     </FieldGroup>
                   )}
