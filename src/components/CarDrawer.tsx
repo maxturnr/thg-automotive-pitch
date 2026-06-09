@@ -32,6 +32,7 @@ const emptyCarData: Partial<Car> = {
   fee: null,
   is_sale_or_return: false,
   notes: null,
+  purchase_vat_type: 'no_vat',
 };
 
 export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerProps) {
@@ -102,6 +103,7 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
         co2_emissions: car.co2_emissions ?? '',
         retail_value: car.retail_value ?? '',
         trade_value: car.trade_value ?? '',
+        purchase_vat_type: car.purchase_vat_type || 'no_vat',
       });
       // Load extras from notes JSON (images, mileage)
       const m = car.mileage;
@@ -282,6 +284,7 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
         co2_emissions: toNum(formData.co2_emissions),
         retail_value: toNum(formData.retail_value),
         trade_value: toNum(formData.trade_value),
+        purchase_vat_type: formData.purchase_vat_type || 'no_vat',
       };
 
       // Store extras (images, mileage) in notes as JSON
@@ -720,6 +723,39 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
                     <DetailField label="Deposit Amount" value={formData.deposit_amount} field="deposit_amount" editing={editing} onChange={updateField} type="currency" />
                   </FieldGroup>
 
+                  <FieldGroup title="VAT Scheme">
+                    {editing ? (
+                      <div className="flex gap-1.5">
+                        {([
+                          { value: 'no_vat', label: 'No VAT' },
+                          { value: 'margin', label: 'VAT Margin' },
+                          { value: 'plus_vat', label: 'Plus VAT' },
+                        ] as const).map(opt => (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            onClick={() => setFormData(prev => ({ ...prev, purchase_vat_type: opt.value }))}
+                            className="flex-1 py-2.5 rounded-[10px] text-[13px] font-medium border cursor-pointer transition-colors"
+                            style={{
+                              borderColor: formData.purchase_vat_type === opt.value ? '#14130f' : 'rgba(20,19,15,0.09)',
+                              background: formData.purchase_vat_type === opt.value ? '#14130f' : '#fff',
+                              color: formData.purchase_vat_type === opt.value ? '#fff' : '#3a3731',
+                            }}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-[14px] text-[#14130f]">
+                        {formData.purchase_vat_type === 'plus_vat' ? 'Plus VAT' : formData.purchase_vat_type === 'margin' ? 'VAT Margin' : 'No VAT'}
+                      </p>
+                    )}
+                    {formData.purchase_vat_type === 'plus_vat' && (
+                      <p className="text-[12px] text-[#958f82] mt-1">VAT on expenses will be deducted from costs</p>
+                    )}
+                  </FieldGroup>
+
                   {(formData.type === 'sor' || formData.is_sale_or_return) && (
                     <FieldGroup title="Sale or Return">
                       <DetailField label="Fee / Commission" value={formData.fee} field="fee" editing={editing} onChange={updateField} type="currency" />
@@ -732,6 +768,9 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
                       <div className="space-y-2">
                         <ComputedRow label="Purchase Price" value={formatCurrency(deal.purchasePrice)} />
                         <ComputedRow label="Prep Costs" value={formatCurrency(deal.prepCosts)} sub={`${deal.expenses.filter(e => e.type?.toLowerCase() !== 'vehicle purchase').length} expenses`} />
+                        {deal.reclaimedVat > 0 && (
+                          <ComputedRow label="VAT Reclaimed" value={`−${formatCurrency(deal.reclaimedVat)}`} valueColor="#35a7f6" sub="Plus VAT scheme" />
+                        )}
                         <ComputedRow label="Total Costs" value={formatCurrency(deal.totalCosts)} bold />
                         <ComputedRow label="Total Income" value={formatCurrency(deal.totalIncome)} />
                         <div className="pt-2 border-t" style={{ borderColor: 'rgba(20,19,15,0.09)' }}>

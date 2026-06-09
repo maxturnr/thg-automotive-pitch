@@ -42,6 +42,7 @@ export interface Car {
   co2_emissions: number | null;
   retail_value: number | null;
   trade_value: number | null;
+  purchase_vat_type: string | null; // 'no_vat' | 'margin' | 'plus_vat'
 }
 
 export interface Expense {
@@ -77,6 +78,7 @@ export interface DealSummary {
   netProfit: number;
   roi: number | null;          // % return on capital for owned
   holdDays: number | null;     // purchase_date → sale/deposit date
+  reclaimedVat: number;        // VAT deducted when plus_vat scheme
 }
 
 export interface Stats {
@@ -103,7 +105,7 @@ export async function fetchAllData(): Promise<{
 }> {
   const [carsRes, expensesRes, incomeRes] = await Promise.all([
     supabase.from('cars').select('*').order('id'),
-    supabase.from('expenses').select('id,stock_id,type,amount,date,supplier,is_overhead').not('stock_id', 'is', null),
+    supabase.from('expenses').select('id,stock_id,type,amount,net_amount,vat_amount,vat_status,date,supplier,is_overhead').not('stock_id', 'is', null),
     supabase.from('income').select('id,stock_id,type,amount,date').not('stock_id', 'is', null),
   ]);
 
@@ -137,18 +139,28 @@ export function computeDeals(cars: Car[], expenses: Expense[], income: Income[])
     const carExpenses = expensesByStock.get(car.id) || [];
     const carIncome = incomeByStock.get(car.id) || [];
 
+    // When plus_vat, use net_amount (VAT reclaimable); otherwise use gross amount
+    const vatReclaimable = car.purchase_vat_type === 'plus_vat';
+    const effectiveAmount = (e: Expense) =>
+      vatReclaimable && e.net_amount != null ? e.net_amount : (e.amount || 0);
+
     // Purchase price: look for "Vehicle Purchase" expense type, otherwise use car.paid
     const purchaseExpense = carExpenses.find(e => 
       e.type?.toLowerCase() === 'vehicle purchase' || e.type?.toLowerCase() === 'vehicle_purchase'
     );
-    const purchasePrice = purchaseExpense?.amount ?? car.paid ?? 0;
+    const purchasePrice = purchaseExpense ? effectiveAmount(purchaseExpense) : (car.paid ?? 0);
 
     // Prep costs: all expenses that aren't the vehicle purchase
     const prepCosts = carExpenses
       .filter(e => e.type?.toLowerCase() !== 'vehicle purchase' && e.type?.toLowerCase() !== 'vehicle_purchase')
-      .reduce((sum, e) => sum + (e.amount || 0), 0);
+      .reduce((sum, e) => sum + effectiveAmount(e), 0);
 
     const totalCosts = purchasePrice + prepCosts;
+
+    // Total reclaimable VAT (for display)
+    const reclaimedVat = vatReclaimable
+      ? carExpenses.reduce((sum, e) => sum + (e.vat_amount || 0), 0)
+      : 0;
 
     // Income: sum from income table or fall back to car.total_income
     const incomeTotal = carIncome.reduce((sum, i) => sum + (i.amount || 0), 0);
@@ -202,6 +214,7 @@ export function computeDeals(cars: Car[], expenses: Expense[], income: Income[])
       netProfit,
       roi,
       holdDays,
+      reclaimedVat,
     };
   });
 }
