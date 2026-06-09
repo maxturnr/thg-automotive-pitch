@@ -3,19 +3,17 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "THG Automotive — Investor Dashboard",
-  description: "Investment performance and vehicle deal analytics for THG Automotive",
+  description: "Performance data and investment projections for THG Automotive",
 };
 
 export default function RootLayout({
   children,
-}: {
+}: Readonly<{
   children: React.ReactNode;
-}) {
+}>) {
   return (
     <html lang="en">
-      <body className="bg-surface-50 text-surface-900 min-h-screen">
-        {children}
-      </body>
+      <body>{children}</body>
     </html>
   );
 }
