@@ -26,6 +26,22 @@ export interface Car {
   stock_number_text: string | null;
   notes: string | null;
   owner_name: string | null;
+  // Vehicle details (from AutoTrader lookup)
+  colour: string | null;
+  fuel_type: string | null;
+  body_type: string | null;
+  transmission: string | null;
+  year: number | null;
+  engine_size: string | null;
+  doors: number | null;
+  seats: number | null;
+  derivative: string | null;
+  vin: string | null;
+  mileage: number | null;
+  engine_power_bhp: number | null;
+  co2_emissions: number | null;
+  retail_value: number | null;
+  trade_value: number | null;
 }
 
 export interface Expense {

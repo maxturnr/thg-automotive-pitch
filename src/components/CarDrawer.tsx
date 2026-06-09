@@ -50,6 +50,11 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
   const [newExpense, setNewExpense] = useState({ type: '', amount: '', date: '', supplier: '' });
   const [savingExpense, setSavingExpense] = useState(false);
   const [deletingExpenseId, setDeletingExpenseId] = useState<number | null>(null);
+  // Lookup state (for new vehicles)
+  const [lookupReg, setLookupReg] = useState('');
+  const [lookingUp, setLookingUp] = useState(false);
+  const [lookupDone, setLookupDone] = useState(false);
+  const [lookupError, setLookupError] = useState('');
   const panelRef = useRef<HTMLDivElement>(null);
 
   const car = deal?.car;
@@ -60,6 +65,9 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
       setFormData({ ...emptyCarData });
       setMileage('');
       setExpenses([]);
+      setLookupDone(false);
+      setLookupReg('');
+      setLookupError('');
     } else if (car) {
       setFormData({
         make: car.make || '',
@@ -80,25 +88,96 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
         notes: car.notes || '',
         owner_payout_amount: car.owner_payout_amount ?? '',
         owner_name: (car as any).owner_name || '',
+        colour: car.colour || '',
+        fuel_type: car.fuel_type || '',
+        body_type: car.body_type || '',
+        transmission: car.transmission || '',
+        year: car.year ?? '',
+        engine_size: car.engine_size || '',
+        doors: car.doors ?? '',
+        seats: car.seats ?? '',
+        derivative: car.derivative || '',
+        vin: car.vin || '',
+        engine_power_bhp: car.engine_power_bhp ?? '',
+        co2_emissions: car.co2_emissions ?? '',
+        retail_value: car.retail_value ?? '',
+        trade_value: car.trade_value ?? '',
       });
       // Load extras from notes JSON (images, mileage)
+      const m = car.mileage;
+      if (m != null) {
+        setMileage(String(m));
+      } else {
+        try {
+          const parsed = car.notes ? JSON.parse(car.notes) : null;
+          if (parsed?.mileage != null) setMileage(String(parsed.mileage));
+        } catch {}
+      }
       try {
         const parsed = car.notes ? JSON.parse(car.notes) : null;
         if (parsed?.images && Array.isArray(parsed.images)) {
           setImages(parsed.images);
         }
-        if (parsed?.mileage != null) {
-          setMileage(String(parsed.mileage));
-        }
-      } catch {
-        // notes is plain text, no extras
-      }
+      } catch {}
       // Load expenses from deal
       if (deal?.expenses) {
         setExpenses(deal.expenses);
       }
+      setLookupDone(true); // existing car, skip lookup
     }
   }, [car, isNew, deal]);
+
+  // AutoTrader registration lookup
+  const handleLookup = async () => {
+    if (!lookupReg.trim()) return;
+    setLookingUp(true);
+    setLookupError('');
+    try {
+      const res = await fetch('/api/vehicle-lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ registration: lookupReg.trim() }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setLookupError(data.error || 'Lookup failed');
+        // Still allow manual entry
+        setFormData(prev => ({ ...prev, reg: lookupReg.trim().toUpperCase() }));
+        setLookupDone(true);
+        return;
+      }
+      const data = await res.json();
+      const v = data.vehicle;
+      // Pre-fill form with lookup data
+      setFormData(prev => ({
+        ...prev,
+        reg: v.registration || lookupReg.trim().toUpperCase(),
+        make: v.make || '',
+        model: v.model || '',
+        colour: v.colour || '',
+        fuel_type: v.fuel_type || '',
+        body_type: v.body_type || '',
+        transmission: v.transmission || '',
+        year: v.year ?? '',
+        engine_size: v.engine_size || '',
+        doors: v.doors ?? '',
+        seats: v.seats ?? '',
+        derivative: v.derivative || '',
+        vin: v.vin || '',
+        engine_power_bhp: v.engine_power_bhp ?? '',
+        co2_emissions: v.co2_emissions ?? '',
+        retail_value: v.retail_value ?? '',
+        trade_value: v.trade_value ?? '',
+      }));
+      setLookupDone(true);
+    } catch (err: any) {
+      setLookupError(err.message || 'Lookup failed');
+      setFormData(prev => ({ ...prev, reg: lookupReg.trim().toUpperCase() }));
+      setLookupDone(true);
+    } finally {
+      setLookingUp(false);
+    }
+  };
 
   const updateField = (key: string, value: any) => {
     setFormData(prev => ({ ...prev, [key]: value }));
@@ -129,6 +208,22 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
         fee: toNum(formData.fee),
         is_sale_or_return: formData.is_sale_or_return || false,
         owner_payout_amount: toNum(formData.owner_payout_amount),
+        // Vehicle details from AutoTrader
+        colour: toStr(formData.colour),
+        fuel_type: toStr(formData.fuel_type),
+        body_type: toStr(formData.body_type),
+        transmission: toStr(formData.transmission),
+        year: toNum(formData.year),
+        engine_size: toStr(formData.engine_size),
+        doors: toNum(formData.doors),
+        seats: toNum(formData.seats),
+        derivative: toStr(formData.derivative),
+        vin: toStr(formData.vin),
+        mileage: toNum(mileage),
+        engine_power_bhp: toNum(formData.engine_power_bhp),
+        co2_emissions: toNum(formData.co2_emissions),
+        retail_value: toNum(formData.retail_value),
+        trade_value: toNum(formData.trade_value),
       };
 
       // Store extras (images, mileage) in notes as JSON
@@ -367,7 +462,8 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
               </div>
             </div>
 
-            {/* Tabs */}
+            {/* Tabs (hidden during lookup step) */}
+            {(!isNew || lookupDone) && (
             <div className="flex items-center gap-5 px-5 border-b" style={{ borderColor: 'rgba(20,19,15,0.08)' }}>
               {tabs.map(t => (
                 <button
@@ -383,8 +479,53 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
                 </button>
               ))}
             </div>
+            )}
 
-            {/* Tab content */}
+            {/* Reg lookup step for new vehicles */}
+            {isNew && !lookupDone && (
+              <div className="px-5 py-8">
+                <div className="max-w-xs mx-auto text-center space-y-5">
+                  <div className="w-12 h-12 rounded-full mx-auto flex items-center justify-center" style={{ background: 'rgba(53,167,246,0.1)' }}>
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" stroke="#35a7f6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  </div>
+                  <div>
+                    <h3 className="text-[16px] font-medium text-[#2f2b28]">Look up vehicle</h3>
+                    <p className="text-[13px] text-[#958f82] mt-1">Enter a registration to auto-fill vehicle details</p>
+                  </div>
+                  <div className="space-y-3">
+                    <input
+                      type="text"
+                      value={lookupReg}
+                      onChange={e => setLookupReg(e.target.value.toUpperCase())}
+                      onKeyDown={e => { if (e.key === 'Enter') handleLookup(); }}
+                      placeholder="e.g. AB12 CDE"
+                      className="w-full px-4 py-3 rounded-[12px] border text-[15px] text-[#14130f] bg-white text-center font-medium tracking-wider uppercase"
+                      style={{ borderColor: 'rgba(20,19,15,0.12)' }}
+                      autoFocus
+                    />
+                    <button
+                      onClick={handleLookup}
+                      disabled={lookingUp || !lookupReg.trim()}
+                      className="w-full py-3 rounded-[12px] text-[14px] font-medium bg-[#14130f] text-white border-none cursor-pointer disabled:opacity-40"
+                    >
+                      {lookingUp ? 'Looking up…' : 'Search AutoTrader'}
+                    </button>
+                    <button
+                      onClick={() => setLookupDone(true)}
+                      className="w-full py-2.5 text-[13px] text-[#8d867b] bg-transparent border-none cursor-pointer hover:text-[#5b5248]"
+                    >
+                      Skip — enter details manually
+                    </button>
+                    {lookupError && (
+                      <p className="text-[13px] text-[#d96b61]">{lookupError} — you can still edit the details manually.</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Tab content (hidden during lookup step) */}
+            {(!isNew || lookupDone) && (
             <div className="px-5 py-5 space-y-4">
               {tab === 'details' && (
                 <>
@@ -392,7 +533,18 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
                     <DetailField label="Make" value={formData.make} field="make" editing={editing} onChange={updateField} />
                     <DetailField label="Model" value={formData.model} field="model" editing={editing} onChange={updateField} />
                     <DetailField label="Registration" value={formData.reg} field="reg" editing={editing} onChange={updateField} />
+                    <DetailField label="Derivative" value={formData.derivative} field="derivative" editing={editing} onChange={updateField} />
                     <MileageField mileage={mileage} editing={editing} onChange={setMileage} />
+                    <DetailField label="Year" value={formData.year} field="year" editing={editing} onChange={updateField} />
+                    <DetailField label="Colour" value={formData.colour} field="colour" editing={editing} onChange={updateField} />
+                    <DetailField label="Body Type" value={formData.body_type} field="body_type" editing={editing} onChange={updateField} />
+                    <DetailField label="Fuel Type" value={formData.fuel_type} field="fuel_type" editing={editing} onChange={updateField} />
+                    <DetailField label="Transmission" value={formData.transmission} field="transmission" editing={editing} onChange={updateField} />
+                    <DetailField label="Engine Size" value={formData.engine_size} field="engine_size" editing={editing} onChange={updateField} />
+                    <DetailField label="Power (BHP)" value={formData.engine_power_bhp} field="engine_power_bhp" editing={editing} onChange={updateField} />
+                    <DetailField label="Doors" value={formData.doors} field="doors" editing={editing} onChange={updateField} />
+                    <DetailField label="Seats" value={formData.seats} field="seats" editing={editing} onChange={updateField} />
+                    <DetailField label="VIN" value={formData.vin} field="vin" editing={editing} onChange={updateField} />
                     <DetailField label="Type" value={formData.type} field="type" editing={editing} onChange={updateField}
                       options={[{ value: 'owned', label: 'Owned' }, { value: 'sor', label: 'Sale or Return' }]} />
                     {(formData.type === 'sor' || formData.is_sale_or_return) && (
@@ -413,6 +565,14 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
                     )}
                   </FieldGroup>
 
+                  {/* Valuations from AutoTrader */}
+                  {(formData.retail_value || formData.trade_value) && !editing && (
+                    <FieldGroup title="AutoTrader Valuations">
+                      {formData.retail_value && <DetailField label="Retail Value" value={formData.retail_value} field="retail_value" editing={false} onChange={updateField} type="currency" />}
+                      {formData.trade_value && <DetailField label="Trade Value" value={formData.trade_value} field="trade_value" editing={false} onChange={updateField} type="currency" />}
+                    </FieldGroup>
+                  )}
+
                   <FieldGroup title="Notes">
                     {editing ? (
                       <textarea
@@ -423,7 +583,6 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
                           } catch { return formData.notes || ''; }
                         })()}
                         onChange={e => {
-                          // Preserve other JSON fields, update just text
                           try {
                             const existing = formData.notes ? JSON.parse(formData.notes) : {};
                             updateField('notes', JSON.stringify({ ...existing, text: e.target.value }));
@@ -721,8 +880,10 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
                 </>
               )}
             </div>
+            )}
 
-            {/* Actions */}
+            {/* Actions (hidden during lookup step) */}
+            {(!isNew || lookupDone) && (
             <div className="sticky bottom-0 bg-white border-t px-5 py-4 flex gap-3" style={{ borderColor: 'rgba(20,19,15,0.08)' }}>
               {editing ? (
                 <>
@@ -750,6 +911,7 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
                 </button>
               )}
             </div>
+            )}
           </div>
         </div>
       </div>
