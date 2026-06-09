@@ -47,7 +47,7 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
   // Expenses state
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [addingExpense, setAddingExpense] = useState(false);
-  const [newExpense, setNewExpense] = useState({ type: '', amount: '', date: '', supplier: '' });
+  const [newExpense, setNewExpense] = useState({ type: '', amount: '', date: '', supplier: '', vat_status: 'inclusive' });
   const [savingExpense, setSavingExpense] = useState(false);
   const [deletingExpenseId, setDeletingExpenseId] = useState<number | null>(null);
   // Lookup state (for new vehicles)
@@ -323,11 +323,42 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
     if (!car || !newExpense.type || !newExpense.amount) return;
     setSavingExpense(true);
     try {
+      const rawAmount = Number(newExpense.amount);
+      let netAmount: number;
+      let vatAmount: number;
+      let vatLabel: string;
+      let vatStatus: string;
+
+      if (newExpense.vat_status === 'inclusive') {
+        // 20% VAT included in amount
+        netAmount = Math.round((rawAmount / 1.2) * 100) / 100;
+        vatAmount = Math.round((rawAmount - netAmount) * 100) / 100;
+        vatLabel = '20%';
+        vatStatus = 'standard';
+      } else if (newExpense.vat_status === 'exclusive') {
+        // VAT on top of amount
+        netAmount = rawAmount;
+        vatAmount = Math.round((rawAmount * 0.2) * 100) / 100;
+        vatLabel = '20%';
+        vatStatus = 'standard';
+      } else {
+        // No VAT
+        netAmount = rawAmount;
+        vatAmount = 0;
+        vatLabel = 'No';
+        vatStatus = 'zero';
+      }
+
+      const totalAmount = newExpense.vat_status === 'exclusive' ? rawAmount + vatAmount : rawAmount;
+
       const data = {
         stock_id: car.id,
         type: newExpense.type,
-        amount: Number(newExpense.amount),
-        net_amount: Number(newExpense.amount),
+        amount: totalAmount,
+        net_amount: netAmount,
+        vat_amount: vatAmount,
+        vat_status: vatStatus,
+        vat: vatLabel,
         date: newExpense.date || new Date().toISOString().split('T')[0],
         supplier: newExpense.supplier || null,
         account_id: 1,
@@ -336,16 +367,13 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
         status: 'Paid',
         payment_status: 'paid',
         currency: 'GBP',
-        vat_amount: 0,
-        vat: 'No',
-        vat_status: 'zero',
       };
       const { data: inserted, error } = await supabase.from('expenses').insert(data).select();
       if (error) throw error;
       if (inserted && inserted[0]) {
         setExpenses(prev => [...prev, inserted[0] as Expense]);
       }
-      setNewExpense({ type: '', amount: '', date: '', supplier: '' });
+      setNewExpense({ type: '', amount: '', date: '', supplier: '', vat_status: 'inclusive' });
       setAddingExpense(false);
       onSaved(); // refresh data
     } catch (err) {
@@ -744,6 +772,7 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
                               >
                                 <option value="">Select type…</option>
                                 <option value="Vehicle Purchase">Vehicle Purchase</option>
+                                <option value="Auction Fee">Auction Fee</option>
                                 <option value="mechanics">Mechanics</option>
                                 <option value="bodywork">Bodywork</option>
                                 <option value="mot">MOT</option>
@@ -766,6 +795,30 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
                                 className="px-3 py-2.5 rounded-[10px] border text-[14px] text-[#14130f] bg-white w-full"
                                 style={{ borderColor: 'rgba(20,19,15,0.09)' }}
                               />
+                            </div>
+                            <div className="flex flex-col gap-1.5">
+                              <label className="text-[11px] uppercase tracking-[0.08em] text-[#7a7368] font-medium">VAT</label>
+                              <div className="flex gap-1.5">
+                                {([
+                                  { value: 'inclusive', label: '20% Incl' },
+                                  { value: 'none', label: 'No VAT' },
+                                  { value: 'exclusive', label: '20% Excl' },
+                                ] as const).map(opt => (
+                                  <button
+                                    key={opt.value}
+                                    type="button"
+                                    onClick={() => setNewExpense(prev => ({ ...prev, vat_status: opt.value }))}
+                                    className="flex-1 py-2 rounded-[10px] text-[13px] font-medium border cursor-pointer transition-colors"
+                                    style={{
+                                      borderColor: newExpense.vat_status === opt.value ? '#14130f' : 'rgba(20,19,15,0.09)',
+                                      background: newExpense.vat_status === opt.value ? '#14130f' : '#fff',
+                                      color: newExpense.vat_status === opt.value ? '#fff' : '#3a3731',
+                                    }}
+                                  >
+                                    {opt.label}
+                                  </button>
+                                ))}
+                              </div>
                             </div>
                             <div className="flex flex-col gap-1.5">
                               <label className="text-[11px] uppercase tracking-[0.08em] text-[#7a7368] font-medium">Supplier</label>
@@ -797,7 +850,7 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
                                 {savingExpense ? 'Adding…' : 'Add Expense'}
                               </button>
                               <button
-                                onClick={() => { setAddingExpense(false); setNewExpense({ type: '', amount: '', date: '', supplier: '' }); }}
+                                onClick={() => { setAddingExpense(false); setNewExpense({ type: '', amount: '', date: '', supplier: '', vat_status: 'inclusive' }); }}
                                 className="px-4 py-2.5 rounded-[10px] text-[13px] font-medium bg-white text-[#3a3731] border cursor-pointer"
                                 style={{ borderColor: 'rgba(20,19,15,0.09)' }}
                               >
@@ -847,7 +900,14 @@ export default function CarDrawer({ deal, isNew, onClose, onSaved }: CarDrawerPr
                                 {exp.date && <div className="text-[11px] text-[#a39c8f]">{formatDate(exp.date)}</div>}
                               </td>
                               <td className="px-4 py-2.5 text-[13px] text-[#958f82]">{exp.supplier || '—'}</td>
-                              <td className="px-4 py-2.5 text-[13px] text-[#14130f] text-right">{formatCurrency(exp.amount)}</td>
+                              <td className="px-4 py-2.5 text-right">
+                                <div className="text-[13px] text-[#14130f]">{formatCurrency(exp.amount)}</div>
+                                {exp.vat_status === 'standard' && exp.vat_amount ? (
+                                  <div className="text-[11px] text-[#a39c8f]">inc. {formatCurrency(exp.vat_amount)} VAT</div>
+                                ) : exp.vat_status === 'zero' || !exp.vat_amount ? (
+                                  <div className="text-[11px] text-[#a39c8f]">No VAT</div>
+                                ) : null}
+                              </td>
                               <td className="px-2 py-2.5">
                                 <button
                                   onClick={() => handleDeleteExpense(exp.id)}

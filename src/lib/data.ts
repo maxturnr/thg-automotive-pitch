@@ -49,6 +49,9 @@ export interface Expense {
   stock_id: number | null;
   type: string;
   amount: number;
+  net_amount: number | null;
+  vat_amount: number | null;
+  vat_status: string | null;
   date: string;
   supplier: string;
   is_overhead: boolean;
